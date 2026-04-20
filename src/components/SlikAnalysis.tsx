@@ -37,8 +37,19 @@ const DEFAULT_INPUT: SlikInputData = {
   nomorLaporanSlik: '',
   totalFasilitas: 0,
   jumlahFasilitasAktif: 0,
+  jumlahFasilitasDibatalkan: 0,
   jumlahFasilitasLunas: 0,
   jumlahFasilitasDihapusbukukan: 0,
+  jumlahFasilitasHapusTagih: 0,
+  jumlahFasilitasLunasAgunan: 0,
+  jumlahFasilitasLunasPengadilan: 0,
+  jumlahFasilitasDialihkanPelapor: 0,
+  jumlahFasilitasDialihkanFasilitas: 0,
+  jumlahFasilitasDialihkanPihakLain: 0,
+  jumlahFasilitasSekuritisasiServicer: 0,
+  jumlahFasilitasSekuritisasiNonServicer: 0,
+  jumlahFasilitasLunasDiskon: 0,
+  jumlahFasilitasDiblokir: 0,
   jumlahFasilitasRestrukturisasi: 0,
   totalFrekuensiRestrukturisasi: 0,
   kolTerburukAktif: 1,
@@ -129,16 +140,60 @@ function ReadOnlyInput({ input }: { input: SlikInputData }) {
             value={String(input.totalFasilitas)}
           />
           <ReadOnlyField
-            label="Fasilitas AKTIF"
+            label="Total Fasilitas Aktif"
             value={String(input.jumlahFasilitasAktif)}
           />
           <ReadOnlyField
-            label="Fasilitas LUNAS"
+            label="Total Fasilitas Dibatalkan"
+            value={String(input.jumlahFasilitasDibatalkan)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Lunas"
             value={String(input.jumlahFasilitasLunas)}
           />
           <ReadOnlyField
-            label="Fasilitas DIHAPUSBUKUKAN"
+            label="Total Fasilitas Dihapusbukukan"
             value={String(input.jumlahFasilitasDihapusbukukan)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Hapus Tagih"
+            value={String(input.jumlahFasilitasHapusTagih)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Lunas karena pengambilalihan agunan"
+            value={String(input.jumlahFasilitasLunasAgunan)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Lunas karena diselesaikan melalui pengadilan"
+            value={String(input.jumlahFasilitasLunasPengadilan)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Dialihkan ke Pelapor lain"
+            value={String(input.jumlahFasilitasDialihkanPelapor)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Dialihkan ke Fasilitas lain"
+            value={String(input.jumlahFasilitasDialihkanFasilitas)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Dialihkan/dijual kepada pihak lain non pelapor"
+            value={String(input.jumlahFasilitasDialihkanPihakLain)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Disekuritisasi (Kreditur Asal sebagai Servicer)"
+            value={String(input.jumlahFasilitasSekuritisasiServicer)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Disekuritisasi (Kreditur Asal tidak sebagai Servicer)"
+            value={String(input.jumlahFasilitasSekuritisasiNonServicer)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Lunas Dengan Diskon"
+            value={String(input.jumlahFasilitasLunasDiskon)}
+          />
+          <ReadOnlyField
+            label="Total Fasilitas Diblokir Sementara"
+            value={String(input.jumlahFasilitasDiblokir)}
           />
           <ReadOnlyField
             label="Fasilitas Pernah Restrukturisasi"
@@ -669,7 +724,22 @@ function parseKualitasHariPairs(values: string[]): {
   return { maxKol, maxHari }
 }
 
-type FacilityStatus = 'aktif' | 'lunas' | 'hapus' | 'other'
+type FacilityStatus =
+  | 'aktif'
+  | 'dibatalkan'
+  | 'lunas'
+  | 'dihapusbukukan'
+  | 'hapus_tagih'
+  | 'lunas_agunan'
+  | 'lunas_pengadilan'
+  | 'dialihkan_pelapor'
+  | 'dialihkan_fasilitas'
+  | 'dialihkan_pihak_lain'
+  | 'sekuritisasi_servicer'
+  | 'sekuritisasi_non_servicer'
+  | 'lunas_diskon'
+  | 'diblokir'
+  | 'other'
 
 interface FacilityAccumulator {
   status: FacilityStatus
@@ -683,15 +753,63 @@ interface FacilityAccumulator {
 function getFacilityStatusFromKondisi(
   kondisiValueLower: string,
 ): FacilityStatus {
-  if (kondisiValueLower.includes('fasilitas aktif')) return 'aktif'
+  if (
+    kondisiValueLower.includes('fasilitas aktif') ||
+    kondisiValueLower === 'aktif'
+  )
+    return 'aktif'
+  if (kondisiValueLower.includes('dibatalkan')) return 'dibatalkan'
+  if (kondisiValueLower.includes('hapus tagih')) return 'hapus_tagih'
+  if (
+    kondisiValueLower.includes('dihapusbukukan') ||
+    kondisiValueLower.includes('dihapusbuku') ||
+    kondisiValueLower.includes('hapus buku')
+  )
+    return 'dihapusbukukan'
+  if (
+    kondisiValueLower.includes('lunas karena pengambilalihan') ||
+    kondisiValueLower.includes('lunas pengambilalihan agunan')
+  )
+    return 'lunas_agunan'
+  if (
+    kondisiValueLower.includes('lunas karena diselesaikan') ||
+    kondisiValueLower.includes('melalui pengadilan')
+  )
+    return 'lunas_pengadilan'
+  if (kondisiValueLower.includes('lunas dengan diskon')) return 'lunas_diskon'
   if (kondisiValueLower.includes('lunas')) return 'lunas'
   if (
-    kondisiValueLower.includes('dihapusbuku') ||
-    kondisiValueLower.includes('dihapusbukukan') ||
-    kondisiValueLower.includes('hapus buku')
-  ) {
-    return 'hapus'
-  }
+    kondisiValueLower.includes('dialihkan ke pelapor') ||
+    kondisiValueLower.includes('dialihkan ke pelapor lain') ||
+    kondisiValueLower.includes('ke pelapor lain') ||
+    kondisiValueLower.includes('dijual ke pelapor')
+  )
+    return 'dialihkan_pelapor'
+  if (
+    kondisiValueLower.includes('dialihkan ke fasilitas') ||
+    kondisiValueLower.includes('dialihkan ke fasilitas lain')
+  )
+    return 'dialihkan_fasilitas'
+  if (
+    kondisiValueLower.includes('dialihkan/dijual') ||
+    kondisiValueLower.includes('dijual kepada pihak lain') ||
+    kondisiValueLower.includes('non pelapor')
+  )
+    return 'dialihkan_pihak_lain'
+  if (kondisiValueLower.includes('dialihkan')) return 'dialihkan_pihak_lain'
+  if (
+    kondisiValueLower.includes('disekuritisasi') &&
+    kondisiValueLower.includes('tidak sebagai servicer')
+  )
+    return 'sekuritisasi_non_servicer'
+  if (
+    kondisiValueLower.includes('disekuritisasi') &&
+    kondisiValueLower.includes('sebagai servicer')
+  )
+    return 'sekuritisasi_servicer'
+  if (kondisiValueLower.includes('disekuritisasi'))
+    return 'sekuritisasi_servicer'
+  if (kondisiValueLower.includes('diblokir')) return 'diblokir'
   return 'other'
 }
 
@@ -897,8 +1015,19 @@ function extractInputFromPdf(
   // ─── EXTRACT FROM TABLES ───
   let totalFasilitas = 0
   let fasilitasAktif = 0
+  let fasilitasDibatalkan = 0
   let fasilitasLunas = 0
   let fasilitasDihapusbukukan = 0
+  let fasilitasHapusTagih = 0
+  let fasilitasLunasAgunan = 0
+  let fasilitasLunasPengadilan = 0
+  let fasilitasDialihkanPelapor = 0
+  let fasilitasDialihkanFasilitas = 0
+  let fasilitasDialihkanPihakLain = 0
+  let fasilitasSekuritisasiServicer = 0
+  let fasilitasSekuritisasiNonServicer = 0
+  let fasilitasLunasDiskon = 0
+  let fasilitasDiblokir = 0
   let kolTerburukAktif = 1
   let kolTerburukHistoris = 1
   let hariTunggakanAktifMax = 0
@@ -1072,10 +1201,41 @@ function extractInputFromPdf(
   if (facilities.length > 0) {
     totalFasilitas = facilities.length
     fasilitasAktif = facilities.filter((f) => f.status === 'aktif').length
+    fasilitasDibatalkan = facilities.filter(
+      (f) => f.status === 'dibatalkan',
+    ).length
     fasilitasLunas = facilities.filter((f) => f.status === 'lunas').length
     fasilitasDihapusbukukan = facilities.filter(
-      (f) => f.status === 'hapus',
+      (f) => f.status === 'dihapusbukukan',
     ).length
+    fasilitasHapusTagih = facilities.filter(
+      (f) => f.status === 'hapus_tagih',
+    ).length
+    fasilitasLunasAgunan = facilities.filter(
+      (f) => f.status === 'lunas_agunan',
+    ).length
+    fasilitasLunasPengadilan = facilities.filter(
+      (f) => f.status === 'lunas_pengadilan',
+    ).length
+    fasilitasDialihkanPelapor = facilities.filter(
+      (f) => f.status === 'dialihkan_pelapor',
+    ).length
+    fasilitasDialihkanFasilitas = facilities.filter(
+      (f) => f.status === 'dialihkan_fasilitas',
+    ).length
+    fasilitasDialihkanPihakLain = facilities.filter(
+      (f) => f.status === 'dialihkan_pihak_lain',
+    ).length
+    fasilitasSekuritisasiServicer = facilities.filter(
+      (f) => f.status === 'sekuritisasi_servicer',
+    ).length
+    fasilitasSekuritisasiNonServicer = facilities.filter(
+      (f) => f.status === 'sekuritisasi_non_servicer',
+    ).length
+    fasilitasLunasDiskon = facilities.filter(
+      (f) => f.status === 'lunas_diskon',
+    ).length
+    fasilitasDiblokir = facilities.filter((f) => f.status === 'diblokir').length
 
     kolTerburukHistoris = Math.max(1, ...facilities.map((f) => f.worstKol))
     kolTerburukAktif = Math.max(
@@ -1141,8 +1301,9 @@ function extractInputFromPdf(
   const adaKol5Aktif = kolTerburukAktif >= 5
   const adaKol4Aktif = kolTerburukAktif >= 4
 
-  // Write-off: if there are hapus buku facilities, assume within 3 years unless we can parse dates
-  const adaWriteOff3Tahun = fasilitasDihapusbukukan > 0
+  // Write-off: if there are hapus buku or hapus tagih facilities, assume within 3 years unless we can parse dates
+  const adaWriteOff3Tahun =
+    fasilitasDihapusbukukan > 0 || fasilitasHapusTagih > 0
 
   // Determine trend based on kolektibilitas aktif
   let trenKolektibilitas6Bulan: 1 | 2 | 3 | 4 | 5 = 1
@@ -1156,8 +1317,20 @@ function extractInputFromPdf(
   // Apply all parsed values
   input.totalFasilitas = totalFasilitas
   input.jumlahFasilitasAktif = fasilitasAktif
+  input.jumlahFasilitasDibatalkan = fasilitasDibatalkan
   input.jumlahFasilitasLunas = fasilitasLunas
   input.jumlahFasilitasDihapusbukukan = fasilitasDihapusbukukan
+  input.jumlahFasilitasHapusTagih = fasilitasHapusTagih
+  input.jumlahFasilitasLunasAgunan = fasilitasLunasAgunan
+  input.jumlahFasilitasLunasPengadilan = fasilitasLunasPengadilan
+  input.jumlahFasilitasDialihkanPelapor = fasilitasDialihkanPelapor
+  input.jumlahFasilitasDialihkanFasilitas = fasilitasDialihkanFasilitas
+  input.jumlahFasilitasDialihkanPihakLain = fasilitasDialihkanPihakLain
+  input.jumlahFasilitasSekuritisasiServicer = fasilitasSekuritisasiServicer
+  input.jumlahFasilitasSekuritisasiNonServicer =
+    fasilitasSekuritisasiNonServicer
+  input.jumlahFasilitasLunasDiskon = fasilitasLunasDiskon
+  input.jumlahFasilitasDiblokir = fasilitasDiblokir
   input.jumlahFasilitasRestrukturisasi = jumlahFasilitasRestrukturisasi
   input.totalFrekuensiRestrukturisasi = totalRestrukturisasi
   input.kolTerburukAktif = (kolTerburukAktif <= 5 ? kolTerburukAktif : 5) as

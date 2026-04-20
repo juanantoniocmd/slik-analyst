@@ -9,8 +9,19 @@ export interface SlikInputData {
   // B. Ringkasan Fasilitas
   totalFasilitas: number
   jumlahFasilitasAktif: number
+  jumlahFasilitasDibatalkan: number
   jumlahFasilitasLunas: number
   jumlahFasilitasDihapusbukukan: number
+  jumlahFasilitasHapusTagih: number
+  jumlahFasilitasLunasAgunan: number
+  jumlahFasilitasLunasPengadilan: number
+  jumlahFasilitasDialihkanPelapor: number
+  jumlahFasilitasDialihkanFasilitas: number
+  jumlahFasilitasDialihkanPihakLain: number
+  jumlahFasilitasSekuritisasiServicer: number
+  jumlahFasilitasSekuritisasiNonServicer: number
+  jumlahFasilitasLunasDiskon: number
+  jumlahFasilitasDiblokir: number
   jumlahFasilitasRestrukturisasi: number
   totalFrekuensiRestrukturisasi: number
 
