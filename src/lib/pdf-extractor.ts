@@ -1,17 +1,161 @@
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type {
   PDFDocumentProxy,
   TextItem,
 } from 'pdfjs-dist/types/src/display/api'
 
-// Use the legacy build which works in Node.js without a worker
-const pdfjsVersion = pdfjsLib.version
+type PdfJsModule = {
+  version: string
+  GlobalWorkerOptions: {
+    workerSrc: string
+  }
+  getDocument: (src: Record<string, unknown>) => {
+    promise: Promise<PDFDocumentProxy>
+  }
+}
 
-// Configure worker for server-side usage (no worker needed in Node)
-if (typeof window === 'undefined') {
-  // Server-side: provide an importable worker module specifier for fake worker.
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'pdfjs-dist/legacy/build/pdf.worker.mjs'
+class NodeDOMMatrixPolyfill {
+  a = 1
+  b = 0
+  c = 0
+  d = 1
+  e = 0
+  f = 0
+
+  constructor(
+    init?:
+      | number[]
+      | {
+          a?: number
+          b?: number
+          c?: number
+          d?: number
+          e?: number
+          f?: number
+        },
+  ) {
+    if (Array.isArray(init)) {
+      this.a = init[0] ?? 1
+      this.b = init[1] ?? 0
+      this.c = init[2] ?? 0
+      this.d = init[3] ?? 1
+      this.e = init[4] ?? 0
+      this.f = init[5] ?? 0
+      return
+    }
+
+    if (init && typeof init === 'object') {
+      this.a = init.a ?? 1
+      this.b = init.b ?? 0
+      this.c = init.c ?? 0
+      this.d = init.d ?? 1
+      this.e = init.e ?? 0
+      this.f = init.f ?? 0
+    }
+  }
+
+  multiplySelf() {
+    return this
+  }
+
+  preMultiplySelf() {
+    return this
+  }
+
+  invertSelf() {
+    return this
+  }
+
+  translate() {
+    return this
+  }
+
+  scale() {
+    return this
+  }
+}
+
+class NodeImageDataPolyfill {
+  data: Uint8ClampedArray
+  width: number
+  height: number
+
+  constructor(
+    dataOrWidth: Uint8ClampedArray | number,
+    widthOrHeight: number,
+    maybeHeight?: number,
+  ) {
+    if (typeof dataOrWidth === 'number') {
+      this.width = dataOrWidth
+      this.height = widthOrHeight
+      this.data = new Uint8ClampedArray(this.width * this.height * 4)
+      return
+    }
+
+    this.data = dataOrWidth
+    this.width = widthOrHeight
+    this.height = maybeHeight ?? 0
+  }
+}
+
+class NodePath2DPolyfill {
+  addPath() {
+    return undefined
+  }
+}
+
+let pdfjsLibPromise: Promise<PdfJsModule> | null = null
+
+function ensureNodePdfJsPolyfills() {
+  if (typeof window !== 'undefined') return
+
+  const g = globalThis as Record<string, unknown> & {
+    DOMMatrix?: unknown
+    ImageData?: unknown
+    Path2D?: unknown
+    navigator?: {
+      language?: string
+      platform?: string
+      userAgent?: string
+    }
+  }
+
+  if (!g.DOMMatrix) {
+    g.DOMMatrix = NodeDOMMatrixPolyfill as unknown
+  }
+
+  if (!g.ImageData) {
+    g.ImageData = NodeImageDataPolyfill as unknown
+  }
+
+  if (!g.Path2D) {
+    g.Path2D = NodePath2DPolyfill as unknown
+  }
+
+  if (!g.navigator?.language) {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        language: 'en-US',
+        platform: '',
+        userAgent: '',
+      },
+    })
+  }
+}
+
+async function getPdfJsLib(): Promise<PdfJsModule> {
+  if (!pdfjsLibPromise) {
+    ensureNodePdfJsPolyfills()
+    pdfjsLibPromise = import('pdfjs-dist/legacy/build/pdf.mjs').then(
+      (module) => {
+        module.GlobalWorkerOptions.workerSrc =
+          'pdfjs-dist/legacy/build/pdf.worker.mjs'
+        return module as unknown as PdfJsModule
+      },
+    )
+  }
+
+  return pdfjsLibPromise
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -62,6 +206,7 @@ export type ExtractionOutcome =
 async function extractPositionedText(
   buffer: ArrayBuffer,
 ): Promise<{ items: PositionedText[]; pageCount: number }> {
+  const pdfjsLib = await getPdfJsLib()
   const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(buffer),
     // Disable font rendering (we only need text content)
@@ -523,6 +668,7 @@ export async function extractPdf(
   buffer: ArrayBuffer,
 ): Promise<ExtractionOutcome> {
   try {
+    const pdfjsLib = await getPdfJsLib()
     const { items, pageCount } = await extractPositionedText(buffer)
 
     if (items.length === 0) {
@@ -559,7 +705,7 @@ export async function extractPdf(
       rawText,
       tables,
       pageCount,
-      version: pdfjsVersion,
+      version: pdfjsLib.version,
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
