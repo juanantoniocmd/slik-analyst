@@ -78,7 +78,7 @@ export function SlikExtractedData({ result }: SlikExtractedDataProps) {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>Tables</CardTitle>
         </CardHeader>
@@ -117,7 +117,7 @@ export function SlikExtractedData({ result }: SlikExtractedDataProps) {
             ))
           )}
         </CardContent>
-      </Card>
+      </Card> */}
 
       <Card>
         <CardHeader>
@@ -130,7 +130,7 @@ export function SlikExtractedData({ result }: SlikExtractedDataProps) {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>Raw Text</CardTitle>
         </CardHeader>
@@ -139,7 +139,7 @@ export function SlikExtractedData({ result }: SlikExtractedDataProps) {
             {result.rawText}
           </pre>
         </CardContent>
-      </Card>
+      </Card> */}
     </section>
   )
 }
