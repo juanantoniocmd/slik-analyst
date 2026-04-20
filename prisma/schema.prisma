@@ -12,3 +12,16 @@ model Todo {
   title     String
   createdAt DateTime @default(now())
 }
+
+model SlikExtraction {
+  id              String   @id @default(cuid())
+  filename        String
+  fileHash        String
+  rawText         String
+  extractedTables Json
+  pageCount       Int
+  status          String   @default("SUCCESS")
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
