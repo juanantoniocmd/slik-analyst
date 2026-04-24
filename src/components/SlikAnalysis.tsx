@@ -1,14 +1,26 @@
 'use client'
 
 import { useMemo } from 'react'
+import { LoaderCircle } from 'lucide-react'
+import { Bar, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 
 import { analyzeSlik } from '../features/slik/slik-scoring-engine'
+import type { GenerateSlikSummaryResponse } from '../features/slik/upload-slik'
 import type {
   SlikAnalysisResult,
   SlikInputData,
 } from '../features/slik/slik-analysis.types'
+import { MarkdownViewer } from './MarkdownViewer'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from './ui/chart'
+import type { ChartConfig } from './ui/chart'
 import { Progress } from './ui/progress'
 import { Separator } from './ui/separator'
 import {
@@ -28,6 +40,10 @@ interface SlikAnalysisProps {
     rows: Record<string, string>[]
   }>
   rawText: string
+  aiSummary?: string
+  aiProvider?: 'chatgpt' | 'gemini'
+  aiSummaryAttempts?: GenerateSlikSummaryResponse['aiSummaryAttempts']
+  isGeneratingAiSummary?: boolean
 }
 
 const DEFAULT_INPUT: SlikInputData = {
@@ -64,7 +80,25 @@ const DEFAULT_INPUT: SlikInputData = {
   adaWriteOff3Tahun: false,
 }
 
-export function SlikAnalysis({ tables, rawText }: SlikAnalysisProps) {
+const sixMonthTrendChartConfig = {
+  frekuensi: {
+    label: 'Frekuensi Tunggakan',
+    color: 'var(--color-chart-2)',
+  },
+  kolektibilitas: {
+    label: 'Kolektibilitas Terburuk',
+    color: 'var(--color-chart-1)',
+  },
+} satisfies ChartConfig
+
+export function SlikAnalysis({
+  tables,
+  rawText,
+  aiSummary,
+  aiProvider,
+  aiSummaryAttempts,
+  isGeneratingAiSummary,
+}: SlikAnalysisProps) {
   const { input, result } = useMemo(() => {
     const parsedInput = extractInputFromPdf(tables, rawText)
     const analysisResult = analyzeSlik(parsedInput)
@@ -81,11 +115,17 @@ export function SlikAnalysis({ tables, rawText }: SlikAnalysisProps) {
         </TabsList>
 
         <TabsContent value="input" className="space-y-4">
-          <ReadOnlyInput input={input} />
+          <ReadOnlyInput input={input} tables={tables} />
         </TabsContent>
 
         <TabsContent value="result">
-          <AnalysisResult result={result} />
+          <AnalysisResult
+            result={result}
+            aiSummary={aiSummary}
+            aiProvider={aiProvider}
+            aiSummaryAttempts={aiSummaryAttempts}
+            isGeneratingAiSummary={isGeneratingAiSummary}
+          />
         </TabsContent>
 
         <TabsContent value="reference">
@@ -98,7 +138,13 @@ export function SlikAnalysis({ tables, rawText }: SlikAnalysisProps) {
 
 // ─── READ-ONLY INPUT DISPLAY ─────────────────────────────────────────────────
 
-function ReadOnlyInput({ input }: { input: SlikInputData }) {
+function ReadOnlyInput({
+  input,
+  tables,
+}: {
+  input: SlikInputData
+  tables: SlikAnalysisProps['tables']
+}) {
   const trenLabels: Record<number, string> = {
     1: '1 — Konsisten Lancar (Semua Kol 1)',
     2: '2 — Membaik (Kol 2+ → Kol 1)',
@@ -106,6 +152,30 @@ function ReadOnlyInput({ input }: { input: SlikInputData }) {
     4: '4 — Memburuk (Kol meningkat)',
     5: '5 — Kol 5 Aktif / Memburuk drastis',
   }
+
+  const sixMonthTrendData = useMemo(
+    () => buildSixMonthTrendData(input),
+    [
+      input.totalFrekuensiTunggakan,
+      input.kolTerburukAktif,
+      input.kolTerburukHistoris,
+      input.trenKolektibilitas6Bulan,
+    ],
+  )
+
+  const pembiayaanList = useMemo(
+    () => extractPembiayaanDetails(tables),
+    [tables],
+  )
+
+  const deltaKolHistorisAktif =
+    input.kolTerburukHistoris - input.kolTerburukAktif
+  const arahPerubahanKol =
+    deltaKolHistorisAktif > 0
+      ? 'Membaik (saat ini lebih baik dari historis)'
+      : deltaKolHistorisAktif < 0
+        ? 'Memburuk (saat ini lebih buruk dari historis)'
+        : 'Stabil'
 
   return (
     <div className="space-y-4">
@@ -208,6 +278,48 @@ function ReadOnlyInput({ input }: { input: SlikInputData }) {
 
       <Card>
         <CardHeader className="pb-3">
+          <CardTitle className="text-sm">B1. List Pembiayaan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {pembiayaanList.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Data list pembiayaan belum terdeteksi dari tabel PDF.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>No</TableHead>
+                  <TableHead>Nama Pembiayaan</TableHead>
+                  <TableHead>Lembaga</TableHead>
+                  <TableHead>No Rekening</TableHead>
+                  <TableHead>Kondisi</TableHead>
+                  <TableHead className="text-right">Kol Terburuk</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pembiayaanList.map((item, index) => (
+                  <TableRow key={`${item.lembaga}-${item.noRekening}-${index}`}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell className="font-medium">
+                      {item.namaPembiayaan}
+                    </TableCell>
+                    <TableCell>{item.lembaga}</TableCell>
+                    <TableCell>{item.noRekening}</TableCell>
+                    <TableCell>{item.kondisi}</TableCell>
+                    <TableCell className="text-right">
+                      Kol {item.kolTerburuk}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm">C. Kolektibilitas</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
@@ -227,6 +339,19 @@ function ReadOnlyInput({ input }: { input: SlikInputData }) {
             label="Ada Kol 4 AKTIF?"
             value={input.adaKol4Aktif ? 'Ya' : 'Tidak'}
           />
+          <ReadOnlyField
+            label="Status Risiko Kolektibilitas AKTIF"
+            value={getKolStatusLabel(input.kolTerburukAktif)}
+          />
+          <ReadOnlyField
+            label="Status Risiko Kolektibilitas HISTORIS"
+            value={getKolStatusLabel(input.kolTerburukHistoris)}
+          />
+          <ReadOnlyField
+            label="Selisih Kol (Historis - Aktif)"
+            value={String(deltaKolHistorisAktif)}
+          />
+          <ReadOnlyField label="Arah Perubahan Kol" value={arahPerubahanKol} />
         </CardContent>
       </Card>
 
@@ -276,7 +401,110 @@ function ReadOnlyInput({ input }: { input: SlikInputData }) {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">G. Write-Off Timing</CardTitle>
+          <CardTitle className="text-sm">
+            G. Visualisasi Tren Tunggakan 6 Bulan
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <ChartContainer
+            config={sixMonthTrendChartConfig}
+            className="h-[280px] w-full"
+          >
+            <LineChart data={sixMonthTrendData}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+              />
+              <YAxis
+                yAxisId="left"
+                allowDecimals={false}
+                tickLine={false}
+                axisLine={false}
+                width={28}
+              />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                domain={[1, 5]}
+                allowDecimals={false}
+                tickLine={false}
+                axisLine={false}
+                width={28}
+              />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              <Bar
+                yAxisId="left"
+                dataKey="frekuensi"
+                fill="var(--color-frekuensi)"
+                radius={[4, 4, 0, 0]}
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="kolektibilitas"
+                stroke="var(--color-kolektibilitas)"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ChartContainer>
+          <p className="text-xs text-muted-foreground">
+            Grafik ini menampilkan pola tunggakan 6 bulan dalam format visual.
+            Saat data bulanan detail tidak tersedia dari PDF, sistem membuat
+            estimasi pola berdasarkan total frekuensi tunggakan dan kategori
+            tren kolektibilitas.
+          </p>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Bulan</TableHead>
+                  <TableHead className="text-right">Frekuensi</TableHead>
+                  <TableHead className="text-right">Kolektibilitas</TableHead>
+                  <TableHead className="text-right">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sixMonthTrendData.map((row) => (
+                  <TableRow key={row.month}>
+                    <TableCell className="font-medium">{row.month}</TableCell>
+                    <TableCell className="text-right">
+                      {row.frekuensi}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      Kol {row.kolektibilitas}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge
+                        variant="outline"
+                        className={
+                          row.kolektibilitas >= 4
+                            ? 'border-red-300 text-red-700 dark:border-red-700 dark:text-red-300'
+                            : row.kolektibilitas === 3
+                              ? 'border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300'
+                              : 'border-green-300 text-green-700 dark:border-green-700 dark:text-green-300'
+                        }
+                      >
+                        {getKolStatusLabel(row.kolektibilitas)}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">H. Write-Off Timing</CardTitle>
         </CardHeader>
         <CardContent className="text-sm">
           <ReadOnlyField
@@ -291,9 +519,85 @@ function ReadOnlyInput({ input }: { input: SlikInputData }) {
 
 // ─── ANALYSIS RESULT ─────────────────────────────────────────────────────────
 
-function AnalysisResult({ result }: { result: SlikAnalysisResult }) {
+function AnalysisResult({
+  result,
+  aiSummary,
+  aiProvider,
+  aiSummaryAttempts,
+  isGeneratingAiSummary,
+}: {
+  result: SlikAnalysisResult
+  aiSummary?: string
+  aiProvider?: 'chatgpt' | 'gemini'
+  aiSummaryAttempts?: GenerateSlikSummaryResponse['aiSummaryAttempts']
+  isGeneratingAiSummary?: boolean
+}) {
   return (
     <div className="space-y-4">
+      {isGeneratingAiSummary ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+              AI Summary sedang diproses
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Generate summary AI berjalan di background. Scoring dan analisis
+              tetap tersedia tanpa menunggu proses ini selesai.
+            </p>
+            <div className="space-y-2 rounded-lg bg-muted p-4">
+              <div className="h-4 w-36 animate-pulse rounded bg-foreground/10" />
+              <div className="h-3 w-full animate-pulse rounded bg-foreground/8" />
+              <div className="h-3 w-[93%] animate-pulse rounded bg-foreground/8" />
+              <div className="h-3 w-[89%] animate-pulse rounded bg-foreground/8" />
+              <div className="h-4 w-28 animate-pulse rounded bg-foreground/10 pt-2" />
+              <div className="h-3 w-full animate-pulse rounded bg-foreground/8" />
+            </div>
+          </CardContent>
+        </Card>
+      ) : aiSummary ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              AI Summary
+              <Badge variant="outline">
+                {(aiProvider ?? 'chatgpt').toUpperCase()}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-[420px] overflow-auto rounded-lg bg-muted p-4">
+              <MarkdownViewer
+                content={aiSummary}
+                className="prose prose-sm max-w-none dark:prose-invert"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      ) : aiSummaryAttempts?.length ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">AI Summary tidak tersedia</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p className="text-muted-foreground">
+              Ringkasan AI belum muncul karena request ke provider gagal.
+            </p>
+            <div className="rounded-lg bg-muted p-3 text-xs">
+              {aiSummaryAttempts.map((attempt, index) => (
+                <p key={`${attempt.provider}-${index}`}>
+                  {attempt.provider.toUpperCase()} ({attempt.model})
+                  {attempt.statusCode ? ` - HTTP ${attempt.statusCode}` : ''}
+                  {attempt.error ? ` - ${attempt.error}` : ''}
+                </p>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Decision Header */}
       <Card>
         <CardHeader className="pb-3">
@@ -724,6 +1028,94 @@ function parseKualitasHariPairs(values: string[]): {
   return { maxKol, maxHari }
 }
 
+function distributeWithWeights(total: number, weights: number[]): number[] {
+  if (total <= 0) {
+    return weights.map(() => 0)
+  }
+
+  const weightSum = weights.reduce((acc, w) => acc + w, 0)
+  const raw = weights.map((w) => (w / weightSum) * total)
+  const floored = raw.map((v) => Math.floor(v))
+  let remainder = total - floored.reduce((acc, v) => acc + v, 0)
+
+  const remainders = raw
+    .map((v, index) => ({ index, remainder: v - Math.floor(v) }))
+    .sort((a, b) => b.remainder - a.remainder)
+
+  for (let i = 0; i < remainders.length && remainder > 0; i += 1) {
+    floored[remainders[i].index] += 1
+    remainder -= 1
+  }
+
+  return floored
+}
+
+function buildSixMonthTrendData(input: SlikInputData) {
+  const now = new Date()
+  const monthFormatter = new Intl.DateTimeFormat('id-ID', { month: 'short' })
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1)
+    return monthFormatter.format(date)
+  })
+
+  const totalFrekuensi = Math.max(0, input.totalFrekuensiTunggakan)
+  const maxKol = Math.min(
+    5,
+    Math.max(1, input.kolTerburukHistoris, input.kolTerburukAktif),
+  )
+
+  let frekuensiWeights = [1, 1, 1, 1, 1, 1]
+  let kolektibilitasSeries = [1, 1, 1, 1, 1, 1]
+
+  switch (input.trenKolektibilitas6Bulan) {
+    case 2:
+      frekuensiWeights = [2.2, 1.8, 1.3, 1, 0.8, 0.6]
+      kolektibilitasSeries = [
+        Math.max(2, maxKol),
+        Math.max(2, maxKol - 1),
+        Math.max(2, maxKol - 1),
+        2,
+        1,
+        1,
+      ]
+      break
+    case 3:
+      frekuensiWeights = [1, 1, 1, 1, 1, 1]
+      kolektibilitasSeries = [2, 2, 2, 2, 2, 2]
+      break
+    case 4:
+      frekuensiWeights = [0.6, 0.8, 1, 1.3, 1.8, 2.2]
+      kolektibilitasSeries = [2, 2, 3, 3, 4, Math.max(4, maxKol)]
+      break
+    case 5:
+      frekuensiWeights = [0.5, 0.7, 1.1, 1.4, 1.8, 2.5]
+      kolektibilitasSeries = [3, 3, 4, 4, 5, 5]
+      break
+    case 1:
+    default:
+      frekuensiWeights = [0.8, 1, 0.9, 1, 1.1, 1]
+      kolektibilitasSeries = [1, 1, 1, 1, 1, 1]
+      break
+  }
+
+  const frekuensiSeries = distributeWithWeights(
+    totalFrekuensi,
+    frekuensiWeights,
+  )
+
+  return months.map((month, index) => ({
+    month,
+    frekuensi: frekuensiSeries[index],
+    kolektibilitas: Math.min(5, Math.max(1, kolektibilitasSeries[index])),
+  }))
+}
+
+function getKolStatusLabel(kol: number): string {
+  if (kol <= 2) return 'Lancar/Terkendali'
+  if (kol === 3) return 'Perlu Perhatian'
+  return 'Bermasalah'
+}
+
 type FacilityStatus =
   | 'aktif'
   | 'dibatalkan'
@@ -748,6 +1140,108 @@ interface FacilityAccumulator {
   frekTunggakan: number
   frekRestrukturisasi: number
   hasCaraRestrukturisasi: boolean
+}
+
+interface PembiayaanDetail {
+  namaPembiayaan: string
+  lembaga: string
+  noRekening: string
+  kondisi: string
+  kolTerburuk: number
+}
+
+function extractPembiayaanDetails(
+  tables: SlikAnalysisProps['tables'],
+): PembiayaanDetail[] {
+  const institutionPattern = /^\d{2,6}\s*[-–]\s+/
+  const result: PembiayaanDetail[] = []
+  let current: PembiayaanDetail | null = null
+
+  for (const table of tables) {
+    for (const row of table.rows) {
+      const rawValues = Object.values(row).map((value) => value.trim())
+      const lowerValues = rawValues.map((value) => value.toLowerCase())
+
+      const firstCell = rawValues[0] ?? ''
+      const firstCellLower = lowerValues[0] ?? ''
+
+      const isInstitutionRow =
+        institutionPattern.test(firstCell) &&
+        rawValues.some((value) => /^Rp\s/i.test(value))
+
+      if (isInstitutionRow) {
+        current = {
+          namaPembiayaan: 'Pembiayaan',
+          lembaga: firstCell,
+          noRekening: '-',
+          kondisi: '-',
+          kolTerburuk: 1,
+        }
+        result.push(current)
+      }
+
+      if (!current) {
+        continue
+      }
+
+      const noRekeningIndex = lowerValues.findIndex(
+        (value) => value === 'no rekening' || value.startsWith('no rekening'),
+      )
+      if (noRekeningIndex >= 0) {
+        const rekeningValue = rawValues
+          .slice(noRekeningIndex + 1)
+          .find((value) => value.length > 0)
+        if (rekeningValue) {
+          current.noRekening = rekeningValue
+        }
+      }
+
+      const jenisPembiayaanIndex = lowerValues.findIndex(
+        (value) =>
+          value === 'jenis kredit/pembiayaan' ||
+          value.startsWith('jenis kredit/pembiayaan') ||
+          value === 'jenis kredit' ||
+          value.startsWith('jenis kredit') ||
+          value === 'akad kredit/pembiayaan' ||
+          value.startsWith('akad kredit/pembiayaan'),
+      )
+      if (jenisPembiayaanIndex >= 0) {
+        const jenisValue = rawValues
+          .slice(jenisPembiayaanIndex + 1)
+          .find((value) => value.length > 0)
+        if (jenisValue) {
+          current.namaPembiayaan = jenisValue
+        }
+      }
+
+      const kondisiIndex = lowerValues.findIndex(
+        (value) => value === 'kondisi' || value.startsWith('kondisi'),
+      )
+      if (kondisiIndex >= 0) {
+        const kondisiValue = rawValues
+          .slice(kondisiIndex + 1)
+          .find((value) => value.length > 0)
+        if (kondisiValue) {
+          current.kondisi = kondisiValue
+        }
+      }
+
+      if (firstCellLower === 'tunggakan') {
+        const timelineValues = lowerValues.slice(1)
+        const hasData = timelineValues.some(
+          (value) => value.length > 0 && /^\d+$/.test(value),
+        )
+        if (hasData) {
+          const { maxKol } = parseKualitasHariPairs(timelineValues)
+          if (maxKol > current.kolTerburuk) {
+            current.kolTerburuk = maxKol
+          }
+        }
+      }
+    }
+  }
+
+  return result
 }
 
 function getFacilityStatusFromKondisi(

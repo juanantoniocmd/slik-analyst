@@ -1,7 +1,12 @@
-import type { UploadSlikPdfResponse } from '../features/slik/upload-slik'
+import type {
+  GenerateSlikSummaryResponse,
+  UploadSlikPdfResponse,
+} from '../features/slik/upload-slik'
+import { LoaderCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from './ui/alert'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import { MarkdownViewer } from './MarkdownViewer'
 import {
   Table,
   TableBody,
@@ -13,6 +18,8 @@ import {
 
 interface SlikExtractedDataProps {
   result: UploadSlikPdfResponse | null
+  aiSummaryResult: GenerateSlikSummaryResponse | null
+  isGeneratingAiSummary: boolean
 }
 
 function isUploadSlikPdfResponse(
@@ -26,7 +33,11 @@ function isUploadSlikPdfResponse(
   )
 }
 
-export function SlikExtractedData({ result }: SlikExtractedDataProps) {
+export function SlikExtractedData({
+  result,
+  aiSummaryResult,
+  isGeneratingAiSummary,
+}: SlikExtractedDataProps) {
   if (!result) {
     return (
       <Card>
@@ -77,6 +88,70 @@ export function SlikExtractedData({ result }: SlikExtractedDataProps) {
           </p>
         </CardContent>
       </Card>
+
+      {isGeneratingAiSummary ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+              AI Summary sedang diproses
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Ringkasan AI dibuat di background. Hasil ekstraksi dan scoring
+              tetap bisa langsung digunakan.
+            </p>
+            <div className="space-y-2 rounded-lg bg-muted p-4">
+              <div className="h-4 w-40 animate-pulse rounded bg-foreground/10" />
+              <div className="h-3 w-full animate-pulse rounded bg-foreground/8" />
+              <div className="h-3 w-[92%] animate-pulse rounded bg-foreground/8" />
+              <div className="h-3 w-[86%] animate-pulse rounded bg-foreground/8" />
+              <div className="h-4 w-32 animate-pulse rounded bg-foreground/10 pt-2" />
+              <div className="h-3 w-full animate-pulse rounded bg-foreground/8" />
+              <div className="h-3 w-[88%] animate-pulse rounded bg-foreground/8" />
+            </div>
+          </CardContent>
+        </Card>
+      ) : aiSummaryResult?.aiSummary ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              AI Summary
+              <Badge variant="outline">
+                {aiSummaryResult.aiSummary.provider.toUpperCase()} •{' '}
+                {aiSummaryResult.aiSummary.model}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-[420px] overflow-auto rounded-lg bg-muted p-4">
+              <MarkdownViewer
+                content={aiSummaryResult.aiSummary.content}
+                className="prose prose-sm max-w-none dark:prose-invert"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      ) : aiSummaryResult?.aiSummaryAttempts.length ? (
+        <Alert>
+          <AlertTitle>AI Summary tidak muncul</AlertTitle>
+          <AlertDescription>
+            <div className="space-y-2 text-sm">
+              <p>Provider AI sudah dicoba, tetapi semua request gagal.</p>
+              <ul className="list-disc space-y-1 pl-5">
+                {aiSummaryResult.aiSummaryAttempts.map((attempt, index) => (
+                  <li key={`${attempt.provider}-${index}`}>
+                    {attempt.provider.toUpperCase()} ({attempt.model})
+                    {attempt.statusCode ? ` - HTTP ${attempt.statusCode}` : ''}
+                    {attempt.error ? ` - ${attempt.error}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {/* <Card>
         <CardHeader>

@@ -5,6 +5,8 @@ export const env = createEnv({
   server: {
     SERVER_URL: z.string().url().optional(),
     DATABASE_URL: z.string().min(1),
+    GEMINI_API_KEY: z.string().min(1).optional(),
+    CHATGPT_API_KEY: z.string().min(1).optional(),
   },
 
   /**
@@ -21,7 +23,16 @@ export const env = createEnv({
    * What object holds the environment variables at runtime. This is usually
    * `process.env` or `import.meta.env`.
    */
-  runtimeEnv: import.meta.env,
+  runtimeEnv: {
+    SERVER_URL: process.env.SERVER_URL,
+    DATABASE_URL:
+      process.env.DATABASE_URL ??
+      process.env.POSTGRES_URL ??
+      process.env.POSTGRES_PRISMA_URL,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    CHATGPT_API_KEY: process.env.CHATGPT_API_KEY ?? process.env.OPENAI_API_KEY,
+    VITE_APP_TITLE: import.meta.env.VITE_APP_TITLE,
+  },
 
   /**
    * By default, this library will feed the environment variables directly to

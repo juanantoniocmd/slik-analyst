@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { prisma } from '../../db'
 import { extractPdf } from '../../lib/pdf-extractor'
+import { generateSlikAiSummary } from './slik-ai-summary'
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -13,6 +14,33 @@ const uploadSlikPdfInput = z.object({
   mimeType: z.string().min(1),
   base64Data: z.string().min(1),
 })
+
+const slikTableSchema = z.object({
+  page: z.number(),
+  headers: z.array(z.string()),
+  rows: z.array(z.record(z.string(), z.string())),
+})
+
+const generateSlikSummaryInput = z.object({
+  rawText: z.string().min(1),
+  tables: z.array(slikTableSchema),
+})
+
+export type GenerateSlikSummaryResponse = {
+  success: boolean
+  aiSummary?: {
+    content: string
+    provider: 'chatgpt' | 'gemini'
+    model: string
+  }
+  aiSummaryAttempts: Array<{
+    provider: 'chatgpt' | 'gemini'
+    ok: boolean
+    model: string
+    error?: string
+    statusCode?: number
+  }>
+}
 
 export type UploadSlikPdfResponse =
   | {
@@ -26,6 +54,18 @@ export type UploadSlikPdfResponse =
         page: number
         headers: string[]
         rows: Record<string, string>[]
+      }>
+      aiSummary?: {
+        content: string
+        provider: 'chatgpt' | 'gemini'
+        model: string
+      }
+      aiSummaryAttempts?: Array<{
+        provider: 'chatgpt' | 'gemini'
+        ok: boolean
+        model: string
+        error?: string
+        statusCode?: number
       }>
       extractedAt: string
     }
@@ -69,7 +109,7 @@ export const uploadSlikPdf = createServerFn({ method: 'POST' })
       const arrayBuffer = buffer.buffer.slice(
         buffer.byteOffset,
         buffer.byteOffset + buffer.byteLength,
-      ) as ArrayBuffer
+      )
 
       const extraction = await extractPdf(arrayBuffer)
 
@@ -145,5 +185,23 @@ export const uploadSlikPdf = createServerFn({ method: 'POST' })
         error: safeError,
         extractionId,
       }
+    }
+  })
+
+export const generateSlikSummary = createServerFn({ method: 'POST' })
+  .inputValidator(generateSlikSummaryInput)
+  .handler(async ({ data }): Promise<GenerateSlikSummaryResponse> => {
+    const execution = await generateSlikAiSummary(data.rawText, data.tables)
+
+    return {
+      success: execution.result !== null,
+      aiSummary: execution.result
+        ? {
+            content: execution.result.summary,
+            provider: execution.result.provider,
+            model: execution.result.model,
+          }
+        : undefined,
+      aiSummaryAttempts: execution.attempts,
     }
   })
