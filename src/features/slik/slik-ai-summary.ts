@@ -1,3 +1,5 @@
+import OpenAI from 'openai'
+
 import { env } from '../../env'
 
 type SlikTable = {
@@ -25,7 +27,7 @@ export type SlikAiSummaryExecution = {
   attempts: SlikAiSummaryAttempt[]
 }
 
-const OPENAI_MODEL = 'gpt-4o-mini'
+const OPENAI_MODEL = 'gpt-4.1'
 const GEMINI_MODEL = 'models/gemini-flash-latest'
 
 function buildSlikPrompt(rawText: string, tables: SlikTable[]): string {
@@ -72,64 +74,70 @@ async function callChatGpt(
     }
   }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.CHATGPT_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  const client = new OpenAI({
+    apiKey: env.CHATGPT_API_KEY,
+  })
+
+  try {
+    const response = await client.responses.create({
       model: OPENAI_MODEL,
       temperature: 0.2,
-      messages: [
+      input: [
         {
           role: 'system',
           content:
             'Anda adalah analis kredit SLIK yang objektif. Hindari klaim tanpa data.',
         },
-        { role: 'user', content: prompt },
+        {
+          role: 'user',
+          content: prompt,
+        },
       ],
-    }),
-  })
+    })
 
-  if (!response.ok) {
-    const errorText = await response.text()
+    const summary = response.output_text.trim()
+    if (!summary) {
+      return {
+        ok: false,
+        attempt: {
+          provider: 'chatgpt',
+          ok: false,
+          model: OPENAI_MODEL,
+          error: 'OpenAI tidak mengembalikan konten summary.',
+        },
+      }
+    }
+
+    return {
+      ok: true,
+      result: {
+        summary,
+        provider: 'chatgpt',
+        model: OPENAI_MODEL,
+      },
+    }
+  } catch (error) {
+    const statusCode =
+      typeof error === 'object' &&
+      error !== null &&
+      'status' in error &&
+      typeof error.status === 'number'
+        ? error.status
+        : undefined
+
+    const errorMessage =
+      error instanceof Error ? error.message : 'OpenAI request gagal.'
+
     return {
       ok: false,
       attempt: {
         provider: 'chatgpt',
         ok: false,
         model: OPENAI_MODEL,
-        statusCode: response.status,
-        error: errorText.slice(0, 500) || 'OpenAI request gagal.',
+        statusCode,
+        error: errorMessage.slice(0, 500),
       },
     }
-  }
-
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-
-  const summary = data.choices?.[0]?.message?.content?.trim()
-  if (!summary) {
-    return {
-      ok: false,
-      attempt: {
-        provider: 'chatgpt',
-        ok: false,
-        model: OPENAI_MODEL,
-        error: 'OpenAI tidak mengembalikan konten summary.',
-      },
-    }
-  }
-
-  return {
-    ok: true,
-    result: {
-      summary,
-      provider: 'chatgpt',
-      model: OPENAI_MODEL,
-    },
   }
 }
 
